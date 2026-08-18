@@ -13,7 +13,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1f"
+VERSION = "1.1g"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -119,6 +119,10 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
 
                 print("[PSX] Initializing flight from SimBrief data...")
 
+                # Open the INIT page first, then set the flight number.
+                backend.send_command(sock, "Qh401=58\r\n")
+                backend.send_command(sock, f"Qs401={callsign}\r\n")
+
                 # Put the restored/re-numbered route name in the CDU CO ROUTE
                 # field and execute LOAD. Qs075 uses the route name without
                 # the trailing underscore or .route extension.
@@ -127,7 +131,6 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 )
                 backend.send_command(sock, "Qh401=53\r\n")
 
-                backend.send_command(sock, f"Qs401={callsign}\r\n")
                 backend.send_command(sock, self.current_data["qi123"])
                 backend.send_command(sock, self.current_data["qs438"])
 
