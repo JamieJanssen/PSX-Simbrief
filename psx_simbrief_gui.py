@@ -13,7 +13,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1g"
+VERSION = "1.1h"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -29,11 +29,23 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         super()._build_ui()
         self.upload_button.configure(text="Flight INIT")
 
+        # Blend the hamburger button into the black clipboard background.
+        self.menu_button.configure(
+            width=2,
+            height=2,
+            bd=0,
+            relief="flat",
+            bg="#000000",
+            fg="#ffffff",
+            activebackground="#000000",
+            activeforeground="#ffffff",
+            highlightthickness=0,
+            padx=0,
+            pady=0,
+        )
+
     def show_menu(self):
         menu = tk.Menu(self, tearoff=False)
-        menu.add_command(label="Fetch SimBrief", command=self.fetch_simbrief)
-        menu.add_command(label="Flight INIT", command=self.upload_current_to_psx)
-        menu.add_separator()
         menu.add_command(label="Purge Routes…", command=self.purge_routes)
         menu.add_command(label="Settings…", command=self.open_settings)
         menu.add_separator()
