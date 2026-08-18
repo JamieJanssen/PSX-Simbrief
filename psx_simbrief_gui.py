@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import configparser
+import json
+import shutil
 import sys
 import threading
 import tkinter as tk
@@ -14,16 +16,17 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.0"
+VERSION = "1.1"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
 if sys.platform == "darwin":
-    SETTINGS_DIR = Path("/Library/Application Support/PSX Simbrief")
+    SETTINGS_DIR = Path.home() / "Library/Application Support/PSX Simbrief"
 else:
     SETTINGS_DIR = APP_DIR
 
 INI_PATH = SETTINGS_DIR / "psx_simbrief.ini"
+CACHE_PATH = SETTINGS_DIR / "last_flight.json"
 
 DEFAULTS = {
     "username": "",
@@ -53,19 +56,20 @@ class PsxSimbriefGui(tk.Tk):
         self.status_var = tk.StringVar(value="Ready")
 
         self._build_ui()
+        self.load_cached_flight()
 
     # ------------------------------------------------------------------
-    # Configuration
+    # Configuration and cache
     # ------------------------------------------------------------------
 
     def load_config(self):
         values = DEFAULTS.copy()
         config = configparser.ConfigParser()
 
-        # On macOS, prefer the system-wide Application Support location.
-        # For convenience while migrating from the CLI version, fall back to
-        # an INI next to the application if the system-wide file does not yet
-        # exist.
+        # On macOS, use the per-user Application Support location. For
+        # convenience while migrating from the CLI version, fall back to an
+        # INI next to the application if the Application Support file does
+        # not yet exist.
         source = INI_PATH
         fallback_source = APP_DIR / "psx_simbrief.ini"
 
@@ -92,17 +96,47 @@ class PsxSimbriefGui(tk.Tk):
             "route_dir": values["route_dir"],
         }
 
-        try:
-            SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-            with INI_PATH.open("w", encoding="utf-8") as handle:
-                config.write(handle)
-        except PermissionError as exc:
-            raise PermissionError(
-                f"Cannot write settings to:\n{INI_PATH}\n\n"
-                "This location requires write permission on macOS."
-            ) from exc
+        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+        with INI_PATH.open("w", encoding="utf-8") as handle:
+            config.write(handle)
 
         self.config_values = values.copy()
+
+    def save_cached_flight(self, data):
+        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+        temp_path = CACHE_PATH.with_suffix(".tmp")
+
+        with temp_path.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+
+        temp_path.replace(CACHE_PATH)
+
+    def load_cached_flight(self):
+        if not CACHE_PATH.exists():
+            return
+
+        try:
+            with CACHE_PATH.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+
+            required = {
+                "callsign",
+                "coroute",
+                "flight",
+                "date",
+                "route",
+                "reserves",
+                "qi123",
+                "qs438",
+                "qs498",
+            }
+            if not required.issubset(data):
+                raise ValueError("Cached flight data is incomplete")
+
+            self._apply_fetched_data(data, from_cache=True)
+        except Exception as exc:
+            self.status_var.set("Could not load saved flight")
+            print(f"[CACHE] Could not load {CACHE_PATH}: {exc}")
 
     # ------------------------------------------------------------------
     # UI
@@ -135,17 +169,14 @@ class PsxSimbriefGui(tk.Tk):
         menu_button.pack(side="right", pady=4)
         self.menu_button = menu_button
 
-        # Clipboard board.
         board = tk.Frame(self, bg="#8c6747", bd=0)
         board.pack(fill="both", expand=True, padx=28, pady=(8, 14))
 
-        # Metal clipboard clip.
         clip = tk.Frame(board, bg="#7b7b78", width=170, height=26)
         clip.place(relx=0.5, y=8, anchor="n")
         clip.pack_propagate(False)
         tk.Frame(clip, bg="#a9a9a5", height=5).pack(fill="x", padx=24, pady=(5, 0))
 
-        # Paper.
         paper = tk.Frame(board, bg="#fffdf7")
         paper.pack(fill="both", expand=True, padx=24, pady=(28, 24))
 
@@ -262,6 +293,7 @@ class PsxSimbriefGui(tk.Tk):
         menu.add_command(label="Fetch SimBrief", command=self.fetch_simbrief)
         menu.add_command(label="Upload to PSX", command=self.upload_current_to_psx)
         menu.add_separator()
+        menu.add_command(label="Purge Routes…", command=self.purge_routes)
         menu.add_command(label="Settings…", command=self.open_settings)
         menu.add_separator()
         menu.add_command(label="Quit", command=self.destroy)
@@ -371,6 +403,43 @@ class PsxSimbriefGui(tk.Tk):
         win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
 
     # ------------------------------------------------------------------
+    # Route maintenance
+    # ------------------------------------------------------------------
+
+    def purge_routes(self):
+        route_dir = Path(self.config_values.get("route_dir", "")).expanduser()
+
+        if not route_dir.exists() or not route_dir.is_dir():
+            messagebox.showerror(
+                APP_NAME,
+                f"Route directory does not exist:\n{route_dir}",
+                parent=self,
+            )
+            return
+
+        confirmed = messagebox.askyesno(
+            "Purge Routes",
+            f"Are you sure you want to delete everything in this route directory?\n\n{route_dir}",
+            parent=self,
+        )
+        if not confirmed:
+            return
+
+        try:
+            deleted = 0
+            for entry in route_dir.iterdir():
+                if entry.is_symlink() or entry.is_file():
+                    entry.unlink()
+                elif entry.is_dir():
+                    shutil.rmtree(entry)
+                deleted += 1
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f"Could not purge routes:\n{exc}", parent=self)
+            return
+
+        self.status_var.set(f"Purged {deleted} route item{'s' if deleted != 1 else ''}")
+
+    # ------------------------------------------------------------------
     # SimBrief / PSX operations
     # ------------------------------------------------------------------
 
@@ -431,16 +500,18 @@ class PsxSimbriefGui(tk.Tk):
                 "qi123": qi123,
                 "qs438": qs438,
                 "qs498": qs498,
+                "wind_body": wind_body,
                 "zfw_kg": zfw_kg,
                 "block_kg": block_kg,
                 "wind_corridors": backend.count_wind_corridors(wind_body),
             }
 
+            self.save_cached_flight(data)
             self.after(0, self._apply_fetched_data, data)
         except Exception as exc:
             self.after(0, self._operation_failed, "SimBrief", str(exc))
 
-    def _apply_fetched_data(self, data):
+    def _apply_fetched_data(self, data, from_cache=False):
         self.current_data = data
         self.callsign_var.set(data["callsign"])
         self.coroute_var.set(data["coroute"])
@@ -455,7 +526,10 @@ class PsxSimbriefGui(tk.Tk):
 
         self.fetch_button.configure(state="normal")
         self.upload_button.configure(state="normal")
-        self.status_var.set(f"Loaded {data['callsign']}")
+        if from_cache:
+            self.status_var.set(f"Restored {data['callsign']}")
+        else:
+            self.status_var.set(f"Loaded {data['callsign']}")
 
     def upload_current_to_psx(self):
         if not self.current_data:
@@ -497,7 +571,6 @@ class PsxSimbriefGui(tk.Tk):
         if not self.current_data:
             return
 
-        # The route is stored as one single line. Tk wraps it visually only.
         self.clipboard_clear()
         self.clipboard_append(self.current_data["route"])
         self.update()
