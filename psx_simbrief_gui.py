@@ -15,7 +15,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1n"
+VERSION = "1.1o"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -74,7 +74,9 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         content = route_frame.master
         for row in range(8):
             content.rowconfigure(row, weight=0)
-        content.pack_configure(fill="x", expand=False, pady=(18, 0))
+        # Keep the content frame expanded so the bottom button bar remains
+        # anchored to the bottom of the paper when the window is taller.
+        content.pack_configure(fill="both", expand=True, pady=(18, 0))
         self.route_text.configure(height=4)
 
         # Remove the original four information rows and separator. They are
