@@ -15,7 +15,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1j"
+VERSION = "1.1k"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -23,6 +23,9 @@ INI_PATH = core.INI_PATH
 class PsxSimbriefGui(core.PsxSimbriefGui):
     def __init__(self):
         self._destroying = False
+        self.fuel_table_var = tk.StringVar(value="")
+        self.zfw_var = tk.StringVar(value="-")
+        self.tow_var = tk.StringVar(value="-")
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("500x700")
@@ -32,7 +35,6 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
     def _build_ui(self):
         super()._build_ui()
         self.upload_button.configure(text="Flight INIT")
-        self.fuel_table_var = tk.StringVar(self, value="")
 
         # Replace the native macOS Tk button with a compact Canvas so the
         # hamburger fits completely inside the black clipboard area.
@@ -42,30 +44,98 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
 
         self.menu_button = tk.Canvas(
             board,
-            width=24,
-            height=28,
+            width=20,
+            height=24,
             bg="#000000",
             bd=0,
             relief="flat",
             highlightthickness=0,
             cursor="hand2",
         )
-        for y in (8, 14, 20):
+        for y in (7, 12, 17):
             self.menu_button.create_line(
-                6,
+                5,
                 y,
-                18,
+                15,
                 y,
                 fill="#ffffff",
                 width=2,
             )
         self.menu_button.bind("<Button-1>", lambda _event: self.show_menu())
-        self.menu_button.place(relx=1.0, x=-8, y=2, anchor="ne")
+        self.menu_button.place(relx=1.0, x=-8, y=3, anchor="ne")
 
         route_frame = self.route_text.master
         content = route_frame.master
         content.rowconfigure(6, weight=0)
         self.route_text.configure(height=6)
+
+        # Remove the original four information rows and separator. They are
+        # replaced by a denser two-column flight summary.
+        for child in list(content.winfo_children()):
+            info = child.grid_info()
+            if info and int(info.get("row", -1)) in (0, 1, 2, 3, 4):
+                child.grid_remove()
+
+        summary = tk.Frame(content, bg="#ffffff")
+        summary.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        summary.columnconfigure(1, weight=1)
+        summary.columnconfigure(4, weight=1)
+
+        def summary_row(row, left_label, left_var, right_label, right_var):
+            tk.Label(
+                summary,
+                text=f"{left_label}:",
+                font=("Menlo", 12, "bold"),
+                bg="#ffffff",
+                fg="#111111",
+                anchor="w",
+            ).grid(row=row, column=0, sticky="w", pady=2)
+            tk.Label(
+                summary,
+                textvariable=left_var,
+                font=("Menlo", 12),
+                bg="#ffffff",
+                fg="#111111",
+                anchor="w",
+            ).grid(row=row, column=1, sticky="w", padx=(12, 18), pady=2)
+
+            tk.Label(
+                summary,
+                text=f"{right_label}:",
+                font=("Menlo", 12, "bold"),
+                bg="#ffffff",
+                fg="#111111",
+                anchor="e",
+            ).grid(row=row, column=3, sticky="e", pady=2)
+            tk.Label(
+                summary,
+                textvariable=right_var,
+                font=("Menlo", 12),
+                bg="#ffffff",
+                fg="#111111",
+                anchor="e",
+            ).grid(row=row, column=4, sticky="e", padx=(12, 0), pady=2)
+
+        summary_row(0, "Flight", self.flight_var, "FLT NO", self.callsign_var)
+        summary_row(1, "Date", self.date_var, "CO ROUTE", self.coroute_var)
+        summary_row(2, "ZFW", self.zfw_var, "TOW", self.tow_var)
+
+        tk.Frame(content, bg="#d0d0d0", height=1).grid(
+            row=1, column=0, columnspan=2, sticky="ew", pady=(6, 10)
+        )
+
+        # Move the remaining original widgets up to reclaim vertical space.
+        for child in list(content.winfo_children()):
+            if child is summary:
+                continue
+            info = child.grid_info()
+            if not info:
+                continue
+            row = int(info.get("row", -1))
+            if row == 5:
+                child.grid_configure(row=2)
+            elif row == 6:
+                child.grid_configure(row=3)
 
         reserve_row = None
         for child in content.winfo_children():
@@ -73,16 +143,6 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             if info and int(info.get("row", -1)) == 7:
                 reserve_row = child
                 break
-
-        if reserve_row is not None:
-            reserve_row.grid_configure(row=8, pady=(10, 0))
-            tk.Label(
-                reserve_row,
-                text="t",
-                font=("Menlo", 8),
-                bg="#ffffff",
-                fg="#111111",
-            ).pack(side="left", padx=(3, 0), pady=(5, 0))
 
         self.fuel_table_label = tk.Label(
             content,
@@ -94,12 +154,22 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             anchor="w",
         )
         self.fuel_table_label.grid(
-            row=7,
+            row=4,
             column=0,
             columnspan=2,
             sticky="w",
-            pady=(14, 0),
+            pady=(12, 0),
         )
+
+        if reserve_row is not None:
+            reserve_row.grid_configure(row=5, pady=(8, 0))
+            tk.Label(
+                reserve_row,
+                text="t",
+                font=("Menlo", 8),
+                bg="#ffffff",
+                fg="#111111",
+            ).pack(side="left", padx=(3, 0), pady=(5, 0))
 
         # Copy Route is no longer needed in the compact layout.
         bottom = self.upload_button.master
@@ -197,6 +267,10 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         hours, minutes = divmod(minutes, 60)
         return f"{sign}{hours:02d}{minutes:02d}"
 
+    @staticmethod
+    def _format_tonnes(value_kg):
+        return f"{float(value_kg) / 1000.0:.1f} t"
+
     def _build_fuel_table(self, root):
         orig_icao, dest_icao = backend.get_orig_dest(root)
         orig_airport = (
@@ -252,10 +326,9 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             time_text = "" if duration is None else self._format_duration(duration)
             return f"{label:<19}{airport:>5}{fuel_text:>8}{time_text:>7}"
 
-        header = f"{'FUEL':<19}{'ARPT':>5}{'FUEL':>8}{'TIME':>7}"
         lines = [
             separator,
-            header,
+            f"{'FUEL':<19}{'ARPT':>5}{'FUEL':>8}{'TIME':>7}",
             separator,
             row("TRIP", dest_airport, trip_fuel, trip_time),
             row(cont_label, "", cont_fuel, cont_time),
@@ -286,6 +359,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 raise RuntimeError(fetch_status.split(":", 1)[-1].strip())
 
             zfw_kg = int(float(backend.required_text(root, ".//weights/est_zfw")))
+            tow_kg = int(float(backend.required_text(root, ".//weights/est_tow")))
             block_kg = int(float(backend.required_text(root, ".//fuel/plan_ramp")))
             zfw_lbs = backend.kg_to_lbs_ceil(zfw_kg)
             block_lbs = backend.kg_to_lbs_ceil(block_kg)
@@ -325,6 +399,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 "qs498": qs498,
                 "wind_body": wind_body,
                 "zfw_kg": zfw_kg,
+                "tow_kg": tow_kg,
                 "block_kg": block_kg,
                 "wind_corridors": backend.count_wind_corridors(wind_body),
             }
@@ -362,6 +437,13 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
 
     def _apply_fetched_data(self, data, from_cache=False):
         super()._apply_fetched_data(data, from_cache=from_cache)
+
+        self.zfw_var.set(
+            self._format_tonnes(data["zfw_kg"]) if data.get("zfw_kg") is not None else "-"
+        )
+        self.tow_var.set(
+            self._format_tonnes(data["tow_kg"]) if data.get("tow_kg") is not None else "-"
+        )
 
         display_route = self._route_with_runways(data)
         self.route_text.configure(state="normal")
