@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.1a"
+VERSION = "1.1b"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -41,9 +41,9 @@ class PsxSimbriefGui(tk.Tk):
         super().__init__()
 
         self.title(f"{APP_NAME} v{VERSION}")
-        self.geometry("800x660")
-        self.minsize(720, 580)
-        self.configure(bg="#d8d5cf")
+        self.geometry("660x650")
+        self.minsize(600, 560)
+        self.configure(bg="#000000")
 
         self.config_values = self.load_config()
         self.current_data = None
@@ -99,8 +99,10 @@ class PsxSimbriefGui(tk.Tk):
     def save_cached_flight(self, data):
         SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
         temp_path = CACHE_PATH.with_suffix(".tmp")
+
         with temp_path.open("w", encoding="utf-8") as handle:
             json.dump(data, handle, ensure_ascii=False, indent=2)
+
         temp_path.replace(CACHE_PATH)
 
     def load_cached_flight(self):
@@ -135,49 +137,43 @@ class PsxSimbriefGui(tk.Tk):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        top = tk.Frame(self, bg="#d8d5cf", height=48)
-        top.pack(fill="x", padx=18, pady=(12, 0))
-        top.pack_propagate(False)
-
-        tk.Label(
-            top,
-            text="PSX Simbrief",
-            font=("Helvetica Neue", 18, "bold"),
-            bg="#d8d5cf",
-            fg="#242424",
-        ).pack(side="left", pady=8)
+        # Black clipboard fills the complete client area. This deliberately
+        # avoids the grey top and side gutters from the earlier layout.
+        board = tk.Frame(self, bg="#000000", bd=0)
+        board.pack(fill="both", expand=True)
 
         self.menu_button = tk.Button(
-            top,
+            board,
             text="☰",
-            font=("Helvetica Neue", 18),
+            font=("Helvetica Neue", 17),
             width=3,
             bd=0,
             relief="flat",
-            bg="#d8d5cf",
-            activebackground="#c9c6c0",
+            bg="#000000",
+            fg="#ffffff",
+            activebackground="#222222",
+            activeforeground="#ffffff",
+            highlightthickness=0,
             command=self.show_menu,
         )
-        self.menu_button.pack(side="right", pady=4)
+        self.menu_button.place(relx=1.0, x=-12, y=10, anchor="ne")
 
-        board = tk.Frame(self, bg="#8c6747", bd=0)
-        board.pack(fill="both", expand=True, padx=28, pady=(8, 14))
-
-        clip = tk.Frame(board, bg="#7b7b78", width=170, height=26)
-        clip.place(relx=0.5, y=8, anchor="n")
+        # Simple metal clipboard clip.
+        clip = tk.Frame(board, bg="#777777", width=150, height=24, bd=0)
+        clip.place(relx=0.5, y=10, anchor="n")
         clip.pack_propagate(False)
-        tk.Frame(clip, bg="#a9a9a5", height=5).pack(fill="x", padx=24, pady=(5, 0))
+        tk.Frame(clip, bg="#b5b5b5", height=5).pack(fill="x", padx=22, pady=(5, 0))
 
-        paper = tk.Frame(board, bg="#fffdf7")
-        paper.pack(fill="both", expand=True, padx=24, pady=(28, 24))
+        paper = tk.Frame(board, bg="#ffffff", bd=0)
+        paper.pack(fill="both", expand=True, padx=20, pady=(32, 20))
 
-        content = tk.Frame(paper, bg="#fffdf7")
-        content.pack(fill="both", expand=True, padx=32, pady=(32, 26))
+        content = tk.Frame(paper, bg="#ffffff")
+        content.pack(fill="both", expand=True, padx=28, pady=(28, 10))
 
         self._info_row(content, "FLT NO", self.callsign_var, 0)
         self._info_row(content, "CO ROUTE", self.coroute_var, 1)
 
-        tk.Frame(content, bg="#ddd8ca", height=1).grid(
+        tk.Frame(content, bg="#d0d0d0", height=1).grid(
             row=2, column=0, columnspan=2, sticky="ew", pady=(10, 14)
         )
 
@@ -188,25 +184,26 @@ class PsxSimbriefGui(tk.Tk):
             content,
             text="Route",
             font=("Menlo", 12, "bold"),
-            bg="#fffdf7",
-            fg="#222222",
+            bg="#ffffff",
+            fg="#111111",
             anchor="w",
         ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(18, 6))
 
-        route_frame = tk.Frame(content, bg="#fffdf7")
+        route_frame = tk.Frame(content, bg="#ffffff")
         route_frame.grid(row=6, column=0, columnspan=2, sticky="nsew")
 
         self.route_text = tk.Text(
             route_frame,
             height=9,
             wrap="word",
-            font=("Menlo", 12),
-            bg="#fffdf7",
+            font=("Menlo", 11),
+            bg="#ffffff",
             fg="#111111",
-            relief="flat",
-            bd=0,
-            padx=0,
-            pady=0,
+            relief="solid",
+            bd=1,
+            highlightthickness=0,
+            padx=8,
+            pady=8,
             undo=False,
             exportselection=True,
         )
@@ -214,29 +211,29 @@ class PsxSimbriefGui(tk.Tk):
         self.route_text.insert("1.0", "-")
         self.route_text.configure(state="disabled")
 
-        reserve_row = tk.Frame(content, bg="#fffdf7")
+        reserve_row = tk.Frame(content, bg="#ffffff")
         reserve_row.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(18, 0))
 
         tk.Label(
             reserve_row,
             text="RESERVES:",
             font=("Menlo", 12, "bold"),
-            bg="#fffdf7",
-            fg="#222222",
+            bg="#ffffff",
+            fg="#111111",
         ).pack(side="left")
         tk.Label(
             reserve_row,
             textvariable=self.reserves_var,
             font=("Menlo", 12),
-            bg="#fffdf7",
+            bg="#ffffff",
             fg="#111111",
         ).pack(side="left", padx=(10, 0))
 
         content.columnconfigure(1, weight=1)
         content.rowconfigure(6, weight=1)
 
-        bottom = tk.Frame(self, bg="#d8d5cf")
-        bottom.pack(fill="x", padx=28, pady=(0, 18))
+        bottom = tk.Frame(paper, bg="#ffffff")
+        bottom.pack(fill="x", padx=28, pady=(2, 18))
 
         self.fetch_button = ttk.Button(bottom, text="Fetch SimBrief", command=self.fetch_simbrief)
         self.fetch_button.pack(side="left")
@@ -254,8 +251,8 @@ class PsxSimbriefGui(tk.Tk):
         tk.Label(
             bottom,
             textvariable=self.status_var,
-            font=("Helvetica Neue", 11),
-            bg="#d8d5cf",
+            font=("Helvetica Neue", 10),
+            bg="#ffffff",
             fg="#555555",
             anchor="e",
         ).pack(side="right", padx=(12, 0))
@@ -265,8 +262,8 @@ class PsxSimbriefGui(tk.Tk):
             parent,
             text=f"{label}:",
             font=("Menlo", 12, "bold"),
-            bg="#fffdf7",
-            fg="#222222",
+            bg="#ffffff",
+            fg="#111111",
             anchor="w",
         ).grid(row=row, column=0, sticky="w", pady=2)
 
@@ -274,7 +271,7 @@ class PsxSimbriefGui(tk.Tk):
             parent,
             textvariable=variable,
             font=("Menlo", 12),
-            bg="#fffdf7",
+            bg="#ffffff",
             fg="#111111",
             anchor="w",
         ).grid(row=row, column=1, sticky="w", padx=(14, 0), pady=2)
@@ -316,13 +313,19 @@ class PsxSimbriefGui(tk.Tk):
         route_var = tk.StringVar(value=self.config_values["route_dir"])
 
         ttk.Label(body, text="SimBrief username").grid(row=0, column=0, sticky="w", pady=6)
-        ttk.Entry(body, textvariable=username_var, width=42).grid(row=0, column=1, columnspan=2, sticky="ew", pady=6)
+        ttk.Entry(body, textvariable=username_var, width=42).grid(
+            row=0, column=1, columnspan=2, sticky="ew", pady=6
+        )
 
         ttk.Label(body, text="PSX host").grid(row=1, column=0, sticky="w", pady=6)
-        ttk.Entry(body, textvariable=host_var, width=42).grid(row=1, column=1, columnspan=2, sticky="ew", pady=6)
+        ttk.Entry(body, textvariable=host_var, width=42).grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=6
+        )
 
         ttk.Label(body, text="PSX port").grid(row=2, column=0, sticky="w", pady=6)
-        ttk.Entry(body, textvariable=port_var, width=42).grid(row=2, column=1, columnspan=2, sticky="ew", pady=6)
+        ttk.Entry(body, textvariable=port_var, width=42).grid(
+            row=2, column=1, columnspan=2, sticky="ew", pady=6
+        )
 
         ttk.Label(body, text="PSX route directory").grid(row=3, column=0, sticky="w", pady=6)
         ttk.Entry(body, textvariable=route_var, width=34).grid(row=3, column=1, sticky="ew", pady=6)
@@ -336,7 +339,9 @@ class PsxSimbriefGui(tk.Tk):
             if selected:
                 route_var.set(selected)
 
-        ttk.Button(body, text="Browse…", command=browse_route).grid(row=3, column=2, padx=(8, 0), pady=6)
+        ttk.Button(body, text="Browse…", command=browse_route).grid(
+            row=3, column=2, padx=(8, 0), pady=6
+        )
 
         ttk.Separator(body).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 10))
         ttk.Label(body, text=f"Settings file:\n{INI_PATH}", foreground="#666666").grid(
@@ -400,7 +405,11 @@ class PsxSimbriefGui(tk.Tk):
         route_dir = Path(self.config_values.get("route_dir", "")).expanduser()
 
         if not route_dir.exists() or not route_dir.is_dir():
-            messagebox.showerror(APP_NAME, f"Route directory does not exist:\n{route_dir}", parent=self)
+            messagebox.showerror(
+                APP_NAME,
+                f"Route directory does not exist:\n{route_dir}",
+                parent=self,
+            )
             return
 
         self._show_purge_confirmation(route_dir)
@@ -480,7 +489,11 @@ class PsxSimbriefGui(tk.Tk):
     def fetch_simbrief(self):
         username = self.config_values.get("username", "").strip()
         if not username:
-            messagebox.showinfo(APP_NAME, "Enter your SimBrief username in Settings first.", parent=self)
+            messagebox.showinfo(
+                APP_NAME,
+                "Enter your SimBrief username in Settings first.",
+                parent=self,
+            )
             self.open_settings()
             return
 
@@ -512,7 +525,9 @@ class PsxSimbriefGui(tk.Tk):
             qs498 = backend.build_qs498(wind_body)
 
             coroute_name, route_path = backend.download_psx_route_file(root, route_dir)
-            callsign, flight_with_runways, readable_date, route, reserve_display = backend.get_flight_summary(root)
+            callsign, flight_with_runways, readable_date, route, reserve_display = (
+                backend.get_flight_summary(root)
+            )
             orig, dest = backend.get_orig_dest(root)
 
             data = {
