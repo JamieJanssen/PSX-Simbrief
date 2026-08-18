@@ -23,7 +23,6 @@ INI_PATH = core.INI_PATH
 class PsxSimbriefGui(core.PsxSimbriefGui):
     def __init__(self):
         self._destroying = False
-        self.fuel_table_var = tk.StringVar(value="")
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("500x700")
@@ -33,6 +32,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
     def _build_ui(self):
         super()._build_ui()
         self.upload_button.configure(text="Flight INIT")
+        self.fuel_table_var = tk.StringVar(self, value="")
 
         # Replace the native macOS Tk button with a compact Canvas so the
         # hamburger fits completely inside the black clipboard area.
@@ -252,9 +252,10 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             time_text = "" if duration is None else self._format_duration(duration)
             return f"{label:<19}{airport:>5}{fuel_text:>8}{time_text:>7}"
 
+        header = f"{'FUEL':<19}{'ARPT':>5}{'FUEL':>8}{'TIME':>7}"
         lines = [
             separator,
-            row("FUEL", "ARPT", "FUEL", "TIME"),
+            header,
             separator,
             row("TRIP", dest_airport, trip_fuel, trip_time),
             row(cont_label, "", cont_fuel, cont_time),
