@@ -15,7 +15,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1l"
+VERSION = "1.1m"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -25,8 +25,8 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         self._destroying = False
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
-        self.geometry("500x700")
-        self.minsize(460, 620)
+        self.geometry("500x660")
+        self.minsize(460, 580)
         self._restore_window_geometry()
 
     def _build_ui(self):
@@ -72,6 +72,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         route_frame = self.route_text.master
         content = route_frame.master
         content.rowconfigure(6, weight=0)
+        content.pack_configure(expand=False)
         self.route_text.configure(height=6)
 
         # Remove the original four information rows and separator. They are
@@ -82,7 +83,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 child.grid_remove()
 
         summary = tk.Frame(content, bg="#ffffff")
-        summary.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        summary.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
         summary.columnconfigure(1, weight=1)
         summary.columnconfigure(4, weight=1)
 
@@ -126,7 +127,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         summary_row(2, "ZFW", self.zfw_var, "TOW", self.tow_var)
 
         tk.Frame(content, bg="#d0d0d0", height=1).grid(
-            row=1, column=0, columnspan=2, sticky="ew", pady=(6, 10)
+            row=1, column=0, columnspan=2, sticky="ew", pady=(1, 4)
         )
 
         # Move the remaining original widgets up to reclaim vertical space.
@@ -138,7 +139,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 continue
             row = int(info.get("row", -1))
             if row == 5:
-                child.grid_configure(row=2)
+                child.grid_configure(row=2, pady=(4, 4))
             elif row == 6:
                 child.grid_configure(row=3)
 
@@ -163,21 +164,22 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             column=0,
             columnspan=2,
             sticky="w",
-            pady=(12, 0),
+            pady=(4, 0),
         )
 
         if reserve_row is not None:
-            reserve_row.grid_configure(row=5, pady=(8, 0))
+            reserve_row.grid_configure(row=5, pady=(4, 0))
             tk.Label(
                 reserve_row,
                 text="t",
-                font=("Menlo", 8),
+                font=("Menlo", 11),
                 bg="#ffffff",
                 fg="#111111",
-            ).pack(side="left", padx=(3, 0), pady=(5, 0))
+            ).pack(side="left", padx=(3, 0), pady=(1, 0))
 
         # Copy Route is no longer needed in the compact layout.
         bottom = self.upload_button.master
+        bottom.pack_configure(pady=(2, 10))
         for child in bottom.winfo_children():
             try:
                 if child.cget("text") == "Copy Route":
@@ -218,12 +220,12 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             x = config.getint("WINDOW", "x")
             y = config.getint("WINDOW", "y")
             width = config.getint("WINDOW", "width", fallback=500)
-            height = config.getint("WINDOW", "height", fallback=700)
+            height = config.getint("WINDOW", "height", fallback=660)
         except (ValueError, configparser.Error):
             return
 
         width = max(width, 460)
-        height = max(height, 620)
+        height = max(height, 580)
         self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _save_window_geometry(self):
