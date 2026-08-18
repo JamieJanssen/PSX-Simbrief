@@ -15,7 +15,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1k"
+VERSION = "1.1l"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -23,9 +23,6 @@ INI_PATH = core.INI_PATH
 class PsxSimbriefGui(core.PsxSimbriefGui):
     def __init__(self):
         self._destroying = False
-        self.fuel_table_var = tk.StringVar(value="")
-        self.zfw_var = tk.StringVar(value="-")
-        self.tow_var = tk.StringVar(value="-")
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("500x700")
@@ -34,6 +31,14 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
 
     def _build_ui(self):
         super()._build_ui()
+
+        # Tk variables must be created only after Tk has initialized the root
+        # window. core.PsxSimbriefGui.__init__ calls this method after tk.Tk
+        # has been initialized, so this is the earliest safe place for them.
+        self.fuel_table_var = tk.StringVar(master=self, value="")
+        self.zfw_var = tk.StringVar(master=self, value="-")
+        self.tow_var = tk.StringVar(master=self, value="-")
+
         self.upload_button.configure(text="Flight INIT")
 
         # Replace the native macOS Tk button with a compact Canvas so the
