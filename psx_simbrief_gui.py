@@ -10,12 +10,13 @@ import time
 import tkinter as tk
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from tkinter import ttk
 
 import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1o"
+VERSION = "1.1p"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -168,7 +169,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             column=0,
             columnspan=2,
             sticky="w",
-            pady=(2, 0),
+            pady=(6, 0),
         )
 
         if reserve_row is not None:
@@ -209,6 +210,72 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             menu.tk_popup(x, y)
         finally:
             menu.grab_release()
+
+    def _show_purge_confirmation(self, route_dir):
+        win = tk.Toplevel(self)
+        win.title("Purge Routes")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        body = ttk.Frame(win, padding=20)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text="Are you sure you want to delete all .route files\nin this route directory?",
+            justify="left",
+        ).pack(anchor="w")
+
+        ttk.Label(
+            body,
+            text=str(route_dir),
+            foreground="#666666",
+            wraplength=440,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 18))
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x")
+
+        def close_no():
+            win.grab_release()
+            win.destroy()
+
+        def confirm_yes():
+            win.grab_release()
+            win.destroy()
+            self.after_idle(lambda: self._purge_routes_confirmed(route_dir))
+
+        no_button = ttk.Button(buttons, text="No", command=close_no)
+        no_button.pack(side="right")
+        yes_button = ttk.Button(buttons, text="Yes", command=confirm_yes)
+        yes_button.pack(side="right", padx=(0, 8))
+
+        win.protocol("WM_DELETE_WINDOW", close_no)
+        win.bind("<Escape>", lambda _event: close_no())
+        win.bind("<Return>", lambda _event: confirm_yes())
+
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        no_button.focus_set()
+
+    def _purge_routes_confirmed(self, route_dir):
+        try:
+            deleted = 0
+            for entry in route_dir.glob("*.route"):
+                if entry.is_file():
+                    entry.unlink()
+                    deleted += 1
+        except Exception as exc:
+            self._show_error_dialog("Purge Routes", f"Could not purge routes:\n{exc}")
+            return
+
+        self.status_var.set(
+            f"Purged {deleted} route file{'s' if deleted != 1 else ''}"
+        )
 
     def save_config(self, values):
         super().save_config(values)
