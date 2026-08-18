@@ -13,7 +13,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1h"
+VERSION = "1.1i"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -23,26 +23,59 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         self._destroying = False
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
+        self.geometry("540x520")
+        self.minsize(500, 460)
         self._restore_window_position()
 
     def _build_ui(self):
         super()._build_ui()
         self.upload_button.configure(text="Flight INIT")
 
-        # Blend the hamburger button into the black clipboard background.
-        self.menu_button.configure(
-            width=2,
-            height=2,
+        # The native macOS Tk button keeps an Aqua background even when a
+        # black background is requested. Replace it with a plain Canvas so
+        # only the white hamburger lines remain visible on the clipboard.
+        old_menu_button = self.menu_button
+        board = old_menu_button.master
+        old_menu_button.destroy()
+
+        self.menu_button = tk.Canvas(
+            board,
+            width=30,
+            height=48,
+            bg="#000000",
             bd=0,
             relief="flat",
-            bg="#000000",
-            fg="#ffffff",
-            activebackground="#000000",
-            activeforeground="#ffffff",
             highlightthickness=0,
-            padx=0,
-            pady=0,
+            cursor="hand2",
         )
+        for y in (17, 24, 31):
+            self.menu_button.create_line(
+                7,
+                y,
+                23,
+                y,
+                fill="#ffffff",
+                width=2,
+            )
+        self.menu_button.bind("<Button-1>", lambda _event: self.show_menu())
+        self.menu_button.place(relx=1.0, x=-10, y=4, anchor="ne")
+
+        # Keep the route field compact instead of allowing it to consume all
+        # available vertical space.
+        route_frame = self.route_text.master
+        content = route_frame.master
+        content.rowconfigure(6, weight=0)
+        self.route_text.configure(height=8)
+
+        # Copy Route is no longer needed in the compact layout.
+        bottom = self.upload_button.master
+        for child in bottom.winfo_children():
+            try:
+                if child.cget("text") == "Copy Route":
+                    child.destroy()
+                    break
+            except tk.TclError:
+                pass
 
     def show_menu(self):
         menu = tk.Menu(self, tearoff=False)
