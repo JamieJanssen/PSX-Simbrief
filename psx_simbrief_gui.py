@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.1"
+VERSION = "1.1a"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -66,10 +66,6 @@ class PsxSimbriefGui(tk.Tk):
         values = DEFAULTS.copy()
         config = configparser.ConfigParser()
 
-        # On macOS, use the per-user Application Support location. For
-        # convenience while migrating from the CLI version, fall back to an
-        # INI next to the application if the Application Support file does
-        # not yet exist.
         source = INI_PATH
         fallback_source = APP_DIR / "psx_simbrief.ini"
 
@@ -87,9 +83,7 @@ class PsxSimbriefGui(tk.Tk):
 
     def save_config(self, values):
         config = configparser.ConfigParser()
-        config["SIMBRIEF"] = {
-            "username": values["username"],
-        }
+        config["SIMBRIEF"] = {"username": values["username"]}
         config["PSX"] = {
             "host": values["host"],
             "port": values["port"],
@@ -105,10 +99,8 @@ class PsxSimbriefGui(tk.Tk):
     def save_cached_flight(self, data):
         SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
         temp_path = CACHE_PATH.with_suffix(".tmp")
-
         with temp_path.open("w", encoding="utf-8") as handle:
             json.dump(data, handle, ensure_ascii=False, indent=2)
-
         temp_path.replace(CACHE_PATH)
 
     def load_cached_flight(self):
@@ -155,7 +147,7 @@ class PsxSimbriefGui(tk.Tk):
             fg="#242424",
         ).pack(side="left", pady=8)
 
-        menu_button = tk.Button(
+        self.menu_button = tk.Button(
             top,
             text="☰",
             font=("Helvetica Neue", 18),
@@ -166,8 +158,7 @@ class PsxSimbriefGui(tk.Tk):
             activebackground="#c9c6c0",
             command=self.show_menu,
         )
-        menu_button.pack(side="right", pady=4)
-        self.menu_button = menu_button
+        self.menu_button.pack(side="right", pady=4)
 
         board = tk.Frame(self, bg="#8c6747", bd=0)
         board.pack(fill="both", expand=True, padx=28, pady=(8, 14))
@@ -300,7 +291,10 @@ class PsxSimbriefGui(tk.Tk):
 
         x = self.menu_button.winfo_rootx()
         y = self.menu_button.winfo_rooty() + self.menu_button.winfo_height()
-        menu.tk_popup(x, y)
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
 
     # ------------------------------------------------------------------
     # Settings window
@@ -345,16 +339,12 @@ class PsxSimbriefGui(tk.Tk):
         ttk.Button(body, text="Browse…", command=browse_route).grid(row=3, column=2, padx=(8, 0), pady=6)
 
         ttk.Separator(body).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 10))
-
-        ttk.Label(
-            body,
-            text=f"Settings file:\n{INI_PATH}",
-            foreground="#666666",
-        ).grid(row=5, column=0, columnspan=3, sticky="w")
+        ttk.Label(body, text=f"Settings file:\n{INI_PATH}", foreground="#666666").grid(
+            row=5, column=0, columnspan=3, sticky="w"
+        )
 
         buttons = ttk.Frame(body)
         buttons.grid(row=6, column=0, columnspan=3, sticky="e", pady=(18, 0))
-
         ttk.Button(buttons, text="Cancel", command=win.destroy).pack(side="right")
 
         def save():
@@ -410,21 +400,65 @@ class PsxSimbriefGui(tk.Tk):
         route_dir = Path(self.config_values.get("route_dir", "")).expanduser()
 
         if not route_dir.exists() or not route_dir.is_dir():
-            messagebox.showerror(
-                APP_NAME,
-                f"Route directory does not exist:\n{route_dir}",
-                parent=self,
-            )
+            messagebox.showerror(APP_NAME, f"Route directory does not exist:\n{route_dir}", parent=self)
             return
 
-        confirmed = messagebox.askyesno(
-            "Purge Routes",
-            f"Are you sure you want to delete everything in this route directory?\n\n{route_dir}",
-            parent=self,
-        )
-        if not confirmed:
-            return
+        self._show_purge_confirmation(route_dir)
 
+    def _show_purge_confirmation(self, route_dir):
+        # Do not use tkinter.messagebox.askyesno here. On current macOS/Tk
+        # combinations the native alert can crash inside GameControllerUI.
+        win = tk.Toplevel(self)
+        win.title("Purge Routes")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        body = ttk.Frame(win, padding=20)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text="Are you sure you want to delete everything\nin this route directory?",
+            justify="left",
+        ).pack(anchor="w")
+
+        ttk.Label(
+            body,
+            text=str(route_dir),
+            foreground="#666666",
+            wraplength=440,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 18))
+
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x")
+
+        def close_no():
+            win.grab_release()
+            win.destroy()
+
+        def confirm_yes():
+            win.grab_release()
+            win.destroy()
+            self.after_idle(lambda: self._purge_routes_confirmed(route_dir))
+
+        no_button = ttk.Button(buttons, text="No", command=close_no)
+        no_button.pack(side="right")
+        yes_button = ttk.Button(buttons, text="Yes", command=confirm_yes)
+        yes_button.pack(side="right", padx=(0, 8))
+
+        win.protocol("WM_DELETE_WINDOW", close_no)
+        win.bind("<Escape>", lambda _event: close_no())
+        win.bind("<Return>", lambda _event: confirm_yes())
+
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        no_button.focus_set()
+
+    def _purge_routes_confirmed(self, route_dir):
         try:
             deleted = 0
             for entry in route_dir.iterdir():
@@ -446,20 +480,14 @@ class PsxSimbriefGui(tk.Tk):
     def fetch_simbrief(self):
         username = self.config_values.get("username", "").strip()
         if not username:
-            messagebox.showinfo(
-                APP_NAME,
-                "Enter your SimBrief username in Settings first.",
-                parent=self,
-            )
+            messagebox.showinfo(APP_NAME, "Enter your SimBrief username in Settings first.", parent=self)
             self.open_settings()
             return
 
         self.fetch_button.configure(state="disabled")
         self.upload_button.configure(state="disabled")
         self.status_var.set("Fetching SimBrief…")
-
-        thread = threading.Thread(target=self._fetch_worker, daemon=True)
-        thread.start()
+        threading.Thread(target=self._fetch_worker, daemon=True).start()
 
     def _fetch_worker(self):
         try:
@@ -471,8 +499,7 @@ class PsxSimbriefGui(tk.Tk):
 
             fetch_status = backend.optional_text(root, ".//fetch/status")
             if fetch_status.lower().startswith("error"):
-                message = fetch_status.split(":", 1)[-1].strip()
-                raise RuntimeError(message)
+                raise RuntimeError(fetch_status.split(":", 1)[-1].strip())
 
             zfw_kg = int(float(backend.required_text(root, ".//weights/est_zfw")))
             block_kg = int(float(backend.required_text(root, ".//fuel/plan_ramp")))
@@ -526,10 +553,7 @@ class PsxSimbriefGui(tk.Tk):
 
         self.fetch_button.configure(state="normal")
         self.upload_button.configure(state="normal")
-        if from_cache:
-            self.status_var.set(f"Restored {data['callsign']}")
-        else:
-            self.status_var.set(f"Loaded {data['callsign']}")
+        self.status_var.set(f"{'Restored' if from_cache else 'Loaded'} {data['callsign']}")
 
     def upload_current_to_psx(self):
         if not self.current_data:
@@ -538,9 +562,7 @@ class PsxSimbriefGui(tk.Tk):
         self.upload_button.configure(state="disabled")
         self.fetch_button.configure(state="disabled")
         self.status_var.set("Uploading to PSX…")
-
-        thread = threading.Thread(target=self._upload_worker, daemon=True)
-        thread.start()
+        threading.Thread(target=self._upload_worker, daemon=True).start()
 
     def _upload_worker(self):
         try:
