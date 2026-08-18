@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.1c"
+VERSION = "1.1d"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -30,6 +30,7 @@ else:
 
 INI_PATH = SETTINGS_DIR / "psx_simbrief.ini"
 CACHE_PATH = SETTINGS_DIR / "last_flight.json"
+ROUTE_CACHE_PATH = SETTINGS_DIR / "last_route.route"
 
 DEFAULTS = {
     "username": "",
@@ -80,7 +81,9 @@ class PsxSimbriefGui(tk.Tk):
             values["username"] = config.get("SIMBRIEF", "username", fallback="").strip()
             values["host"] = config.get("PSX", "host", fallback=DEFAULTS["host"]).strip()
             values["port"] = config.get("PSX", "port", fallback=DEFAULTS["port"]).strip()
-            values["route_dir"] = config.get("PSX", "route_dir", fallback=DEFAULTS["route_dir"]).strip()
+            values["route_dir"] = config.get(
+                "PSX", "route_dir", fallback=DEFAULTS["route_dir"]
+            ).strip()
 
         return values
 
@@ -108,6 +111,31 @@ class PsxSimbriefGui(tk.Tk):
 
         temp_path.replace(CACHE_PATH)
 
+    def save_persistent_route(self, route_bytes):
+        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+        temp_path = ROUTE_CACHE_PATH.with_suffix(".tmp")
+        temp_path.write_bytes(route_bytes)
+        temp_path.replace(ROUTE_CACHE_PATH)
+
+    def _migrate_route_cache(self, data):
+        """Create last_route.route from older cache formats when possible."""
+        if ROUTE_CACHE_PATH.exists() and ROUTE_CACHE_PATH.is_file():
+            return
+
+        encoded = data.get("route_file_b64", "")
+        if encoded:
+            try:
+                self.save_persistent_route(base64.b64decode(encoded.encode("ascii")))
+                return
+            except Exception:
+                pass
+
+        old_path_text = data.get("route_path", "")
+        if old_path_text:
+            old_path = Path(old_path_text).expanduser()
+            if old_path.exists() and old_path.is_file():
+                self.save_persistent_route(old_path.read_bytes())
+
     def load_cached_flight(self):
         if not CACHE_PATH.exists():
             return
@@ -130,6 +158,7 @@ class PsxSimbriefGui(tk.Tk):
             if not required.issubset(data):
                 raise ValueError("Cached flight data is incomplete")
 
+            self._migrate_route_cache(data)
             self._apply_fetched_data(data, from_cache=True)
         except Exception as exc:
             self.status_var.set("Could not load saved flight")
@@ -162,7 +191,9 @@ class PsxSimbriefGui(tk.Tk):
         clip = tk.Frame(board, bg="#777777", width=150, height=24, bd=0)
         clip.place(relx=0.5, y=10, anchor="n")
         clip.pack_propagate(False)
-        tk.Frame(clip, bg="#b5b5b5", height=5).pack(fill="x", padx=22, pady=(5, 0))
+        tk.Frame(clip, bg="#b5b5b5", height=5).pack(
+            fill="x", padx=22, pady=(5, 0)
+        )
 
         paper = tk.Frame(board, bg="#ffffff", bd=0)
         paper.pack(fill="both", expand=True, padx=20, pady=(32, 20))
@@ -235,7 +266,9 @@ class PsxSimbriefGui(tk.Tk):
         bottom = tk.Frame(paper, bg="#ffffff")
         bottom.pack(fill="x", padx=28, pady=(2, 18))
 
-        self.fetch_button = ttk.Button(bottom, text="Fetch SimBrief", command=self.fetch_simbrief)
+        self.fetch_button = ttk.Button(
+            bottom, text="Fetch SimBrief", command=self.fetch_simbrief
+        )
         self.fetch_button.pack(side="left")
 
         self.upload_button = ttk.Button(
@@ -246,7 +279,9 @@ class PsxSimbriefGui(tk.Tk):
         )
         self.upload_button.pack(side="left", padx=(8, 0))
 
-        ttk.Button(bottom, text="Copy Route", command=self.copy_route).pack(side="left", padx=(8, 0))
+        ttk.Button(bottom, text="Copy Route", command=self.copy_route).pack(
+            side="left", padx=(8, 0)
+        )
 
         tk.Label(
             bottom,
@@ -312,23 +347,33 @@ class PsxSimbriefGui(tk.Tk):
         port_var = tk.StringVar(value=self.config_values["port"])
         route_var = tk.StringVar(value=self.config_values["route_dir"])
 
-        ttk.Label(body, text="SimBrief username").grid(row=0, column=0, sticky="w", pady=6)
+        ttk.Label(body, text="SimBrief username").grid(
+            row=0, column=0, sticky="w", pady=6
+        )
         ttk.Entry(body, textvariable=username_var, width=42).grid(
             row=0, column=1, columnspan=2, sticky="ew", pady=6
         )
 
-        ttk.Label(body, text="PSX host").grid(row=1, column=0, sticky="w", pady=6)
+        ttk.Label(body, text="PSX host").grid(
+            row=1, column=0, sticky="w", pady=6
+        )
         ttk.Entry(body, textvariable=host_var, width=42).grid(
             row=1, column=1, columnspan=2, sticky="ew", pady=6
         )
 
-        ttk.Label(body, text="PSX port").grid(row=2, column=0, sticky="w", pady=6)
+        ttk.Label(body, text="PSX port").grid(
+            row=2, column=0, sticky="w", pady=6
+        )
         ttk.Entry(body, textvariable=port_var, width=42).grid(
             row=2, column=1, columnspan=2, sticky="ew", pady=6
         )
 
-        ttk.Label(body, text="PSX route directory").grid(row=3, column=0, sticky="w", pady=6)
-        ttk.Entry(body, textvariable=route_var, width=34).grid(row=3, column=1, sticky="ew", pady=6)
+        ttk.Label(body, text="PSX route directory").grid(
+            row=3, column=0, sticky="w", pady=6
+        )
+        ttk.Entry(body, textvariable=route_var, width=34).grid(
+            row=3, column=1, sticky="ew", pady=6
+        )
 
         def browse_route():
             selected = filedialog.askdirectory(
@@ -343,10 +388,14 @@ class PsxSimbriefGui(tk.Tk):
             row=3, column=2, padx=(8, 0), pady=6
         )
 
-        ttk.Separator(body).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(12, 10))
-        ttk.Label(body, text=f"Settings file:\n{INI_PATH}", foreground="#666666").grid(
-            row=5, column=0, columnspan=3, sticky="w"
+        ttk.Separator(body).grid(
+            row=4, column=0, columnspan=3, sticky="ew", pady=(12, 10)
         )
+        ttk.Label(
+            body,
+            text=f"Settings file:\n{INI_PATH}",
+            foreground="#666666",
+        ).grid(row=5, column=0, columnspan=3, sticky="w")
 
         buttons = ttk.Frame(body)
         buttons.grid(row=6, column=0, columnspan=3, sticky="e", pady=(18, 0))
@@ -359,7 +408,9 @@ class PsxSimbriefGui(tk.Tk):
             route_dir = route_var.get().strip()
 
             if not username:
-                messagebox.showerror("Settings", "SimBrief username is required.", parent=win)
+                messagebox.showerror(
+                    "Settings", "SimBrief username is required.", parent=win
+                )
                 return
 
             try:
@@ -367,11 +418,15 @@ class PsxSimbriefGui(tk.Tk):
                 if not 1 <= port_number <= 65535:
                     raise ValueError
             except ValueError:
-                messagebox.showerror("Settings", "PSX port must be between 1 and 65535.", parent=win)
+                messagebox.showerror(
+                    "Settings", "PSX port must be between 1 and 65535.", parent=win
+                )
                 return
 
             if not route_dir:
-                messagebox.showerror("Settings", "PSX route directory is required.", parent=win)
+                messagebox.showerror(
+                    "Settings", "PSX route directory is required.", parent=win
+                )
                 return
 
             values = {
@@ -390,7 +445,9 @@ class PsxSimbriefGui(tk.Tk):
             self.status_var.set("Settings saved")
             win.destroy()
 
-        ttk.Button(buttons, text="Save", command=save).pack(side="right", padx=(0, 8))
+        ttk.Button(buttons, text="Save", command=save).pack(
+            side="right", padx=(0, 8)
+        )
 
         win.update_idletasks()
         x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
@@ -405,10 +462,8 @@ class PsxSimbriefGui(tk.Tk):
         route_dir = Path(self.config_values.get("route_dir", "")).expanduser()
 
         if not route_dir.exists() or not route_dir.is_dir():
-            messagebox.showerror(
-                APP_NAME,
-                f"Route directory does not exist:\n{route_dir}",
-                parent=self,
+            self._show_error_dialog(
+                "Purge Routes", f"Route directory does not exist:\n{route_dir}"
             )
             return
 
@@ -475,10 +530,12 @@ class PsxSimbriefGui(tk.Tk):
                     shutil.rmtree(entry)
                 deleted += 1
         except Exception as exc:
-            messagebox.showerror(APP_NAME, f"Could not purge routes:\n{exc}", parent=self)
+            self._show_error_dialog("Purge Routes", f"Could not purge routes:\n{exc}")
             return
 
-        self.status_var.set(f"Purged {deleted} route item{'s' if deleted != 1 else ''}")
+        self.status_var.set(
+            f"Purged {deleted} route item{'s' if deleted != 1 else ''}"
+        )
 
     # ------------------------------------------------------------------
     # SimBrief / PSX operations
@@ -524,6 +581,8 @@ class PsxSimbriefGui(tk.Tk):
 
             coroute_name, route_path = backend.download_psx_route_file(root, route_dir)
             route_bytes = Path(route_path).read_bytes()
+            self.save_persistent_route(route_bytes)
+
             callsign, flight_with_runways, readable_date, route, reserve_display = (
                 backend.get_flight_summary(root)
             )
@@ -540,7 +599,6 @@ class PsxSimbriefGui(tk.Tk):
                 "route": " ".join(route.split()),
                 "reserves": reserve_display,
                 "route_path": str(route_path),
-                "route_file_b64": base64.b64encode(route_bytes).decode("ascii"),
                 "qi123": qi123,
                 "qs438": qs438,
                 "qs498": qs498,
@@ -570,22 +628,37 @@ class PsxSimbriefGui(tk.Tk):
 
         self.fetch_button.configure(state="normal")
         self.upload_button.configure(state="normal")
-        self.status_var.set(f"{'Restored' if from_cache else 'Loaded'} {data['callsign']}")
+        self.status_var.set(
+            f"{'Restored' if from_cache else 'Loaded'} {data['callsign']}"
+        )
 
     def _get_cached_route_bytes(self):
+        if ROUTE_CACHE_PATH.exists() and ROUTE_CACHE_PATH.is_file():
+            return ROUTE_CACHE_PATH.read_bytes()
+
+        # Migration path for v1.1c, which stored the route in last_flight.json.
         encoded = self.current_data.get("route_file_b64", "")
         if encoded:
-            return base64.b64decode(encoded.encode("ascii"))
-
-        old_path = Path(self.current_data.get("route_path", "")).expanduser()
-        if old_path.exists() and old_path.is_file():
-            route_bytes = old_path.read_bytes()
-            self.current_data["route_file_b64"] = base64.b64encode(route_bytes).decode("ascii")
+            route_bytes = base64.b64decode(encoded.encode("ascii"))
+            self.save_persistent_route(route_bytes)
+            self.current_data.pop("route_file_b64", None)
+            self.save_cached_flight(self.current_data)
             return route_bytes
 
+        # Migration path for older caches if the route still exists in the
+        # configured PSX route directory.
+        old_path_text = self.current_data.get("route_path", "")
+        if old_path_text:
+            old_path = Path(old_path_text).expanduser()
+            if old_path.exists() and old_path.is_file():
+                route_bytes = old_path.read_bytes()
+                self.save_persistent_route(route_bytes)
+                return route_bytes
+
         raise RuntimeError(
-            "The saved flight does not contain the PSX route file. "
-            "Fetch SimBrief once to refresh the saved flight data."
+            "No saved PSX route file is available for this cached flight. "
+            "This cache was created before route-file persistence was added. "
+            "Fetch SimBrief once to create last_route.route."
         )
 
     def _get_cached_orig_dest(self):
@@ -603,7 +676,9 @@ class PsxSimbriefGui(tk.Tk):
             self.current_data["dest"] = dest
             return orig, dest
 
-        raise RuntimeError("Could not determine origin and destination for the saved route file.")
+        raise RuntimeError(
+            "Could not determine origin and destination for the saved route file."
+        )
 
     def _restore_route_file_for_upload(self):
         route_bytes = self._get_cached_route_bytes()
@@ -613,24 +688,32 @@ class PsxSimbriefGui(tk.Tk):
         route_dir.mkdir(parents=True, exist_ok=True)
 
         current_coroute = self.current_data.get("coroute", "").strip().upper()
-        if not current_coroute:
-            current_coroute, _, _ = backend.next_coroute_name(route_dir, orig, dest)
+        current_path = (
+            route_dir / f"{current_coroute}_.route" if current_coroute else None
+        )
 
-        target_path = route_dir / f"{current_coroute}_.route"
+        if current_path and current_path.exists():
+            if current_path.read_bytes() == route_bytes:
+                target_coroute = current_coroute
+                target_path = current_path
+            else:
+                target_coroute, _, target_path = backend.next_coroute_name(
+                    route_dir, orig, dest
+                )
+        else:
+            # If the route directory was purged, this deliberately starts
+            # again at the first free number (normally 01).
+            target_coroute, _, target_path = backend.next_coroute_name(
+                route_dir, orig, dest
+            )
 
-        if target_path.exists():
-            existing_bytes = target_path.read_bytes()
-            if existing_bytes != route_bytes:
-                current_coroute, _, target_path = backend.next_coroute_name(route_dir, orig, dest)
-
-        # Always write the cached route again when Upload to PSX is pressed.
         target_path.write_bytes(route_bytes)
 
-        self.current_data["coroute"] = current_coroute
+        self.current_data["coroute"] = target_coroute
         self.current_data["route_path"] = str(target_path)
         self.save_cached_flight(self.current_data)
 
-        return current_coroute, target_path
+        return target_coroute, target_path
 
     def upload_current_to_psx(self):
         if not self.current_data:
@@ -670,7 +753,9 @@ class PsxSimbriefGui(tk.Tk):
                 backend.send_command(sock, "exit\r\n", pause=0)
 
             print("[PSX] Upload complete. Disconnected.")
-            self.after(0, self._upload_complete, coroute_name, str(route_path))
+            self.after(
+                0, self._upload_complete, coroute_name, str(route_path)
+            )
         except Exception as exc:
             self.after(0, self._operation_failed, "PSX", str(exc))
 
@@ -687,7 +772,44 @@ class PsxSimbriefGui(tk.Tk):
         if self.current_data:
             self.upload_button.configure(state="normal")
         self.status_var.set(f"{source} error")
-        messagebox.showerror(APP_NAME, message, parent=self)
+        print(f"[{source.upper()}] {message}")
+        self._show_error_dialog(f"{source} Error", message)
+
+    def _show_error_dialog(self, title, message):
+        # Custom Tk dialog: avoids the native macOS alert path that can crash
+        # in current Tk/macOS combinations.
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        body = ttk.Frame(win, padding=20)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text=message,
+            wraplength=460,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 18))
+
+        def close():
+            try:
+                win.grab_release()
+            except tk.TclError:
+                pass
+            win.destroy()
+
+        ttk.Button(body, text="OK", command=close).pack(anchor="e")
+        win.protocol("WM_DELETE_WINDOW", close)
+        win.bind("<Escape>", lambda _event: close())
+        win.bind("<Return>", lambda _event: close())
+
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(x, 0)}+{max(y, 0)}")
 
     def copy_route(self):
         if not self.current_data:
