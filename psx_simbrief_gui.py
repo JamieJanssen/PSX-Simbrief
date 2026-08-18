@@ -16,7 +16,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1p"
+VERSION = "1.1q"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -518,6 +518,10 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         return " ".join(parts) if parts else route
 
     def _resize_route_box(self):
+        # Tk may only report the display lines that currently fit in a Text
+        # widget. Temporarily make the box as tall as the allowed maximum so
+        # the complete wrapped route can be measured before shrinking it.
+        self.route_text.configure(height=10)
         self.update_idletasks()
         try:
             count = self.route_text.count("1.0", "end-1c", "displaylines")
