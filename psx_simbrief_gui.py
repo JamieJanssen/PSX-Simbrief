@@ -19,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.1d"
+VERSION = "1.1e"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -738,6 +738,14 @@ class PsxSimbriefGui(tk.Tk):
                 time.sleep(backend.WAIT_AFTER_CONNECT_SECONDS)
 
                 print("[PSX] Uploading SimBrief data...")
+
+                # Put the restored/re-numbered route name in the CDU CO ROUTE
+                # field and execute LOAD. Qh075 uses the route name without
+                # the trailing underscore or .route extension.
+                backend.send_command(
+                    sock, f"Qh075={coroute_name}\r\n", pause=0.1
+                )
+                backend.send_command(sock, "Qh401=53\r\n")
 
                 backend.send_command(sock, f"Qs401={callsign}\r\n")
                 backend.send_command(sock, self.current_data["qi123"])
