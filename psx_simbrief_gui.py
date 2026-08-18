@@ -15,7 +15,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1m"
+VERSION = "1.1n"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -25,8 +25,8 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         self._destroying = False
         super().__init__()
         self.title(f"{APP_NAME} v{VERSION}")
-        self.geometry("500x660")
-        self.minsize(460, 580)
+        self.geometry("500x620")
+        self.minsize(460, 540)
         self._restore_window_geometry()
 
     def _build_ui(self):
@@ -38,6 +38,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         self.fuel_table_var = tk.StringVar(master=self, value="")
         self.zfw_var = tk.StringVar(master=self, value="-")
         self.tow_var = tk.StringVar(master=self, value="-")
+        self.reserve_display_var = tk.StringVar(master=self, value="-")
 
         self.upload_button.configure(text="Flight INIT")
 
@@ -71,9 +72,10 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
 
         route_frame = self.route_text.master
         content = route_frame.master
-        content.rowconfigure(6, weight=0)
-        content.pack_configure(expand=False)
-        self.route_text.configure(height=6)
+        for row in range(8):
+            content.rowconfigure(row, weight=0)
+        content.pack_configure(fill="x", expand=False, pady=(18, 0))
+        self.route_text.configure(height=4)
 
         # Remove the original four information rows and separator. They are
         # replaced by a denser two-column flight summary.
@@ -83,7 +85,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 child.grid_remove()
 
         summary = tk.Frame(content, bg="#ffffff")
-        summary.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        summary.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 2))
         summary.columnconfigure(1, weight=1)
         summary.columnconfigure(4, weight=1)
 
@@ -127,7 +129,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         summary_row(2, "ZFW", self.zfw_var, "TOW", self.tow_var)
 
         tk.Frame(content, bg="#d0d0d0", height=1).grid(
-            row=1, column=0, columnspan=2, sticky="ew", pady=(1, 4)
+            row=1, column=0, columnspan=2, sticky="ew", pady=(0, 2)
         )
 
         # Move the remaining original widgets up to reclaim vertical space.
@@ -139,7 +141,7 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
                 continue
             row = int(info.get("row", -1))
             if row == 5:
-                child.grid_configure(row=2, pady=(4, 4))
+                child.grid_configure(row=2, pady=(2, 2))
             elif row == 6:
                 child.grid_configure(row=3)
 
@@ -164,22 +166,26 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             column=0,
             columnspan=2,
             sticky="w",
-            pady=(4, 0),
+            pady=(2, 0),
         )
 
         if reserve_row is not None:
-            reserve_row.grid_configure(row=5, pady=(4, 0))
+            reserve_row.grid_configure(row=5, pady=(2, 0))
+            # Keep the reserve value and unit as one label so they use the
+            # same font and baseline: e.g. "12.6 t".
+            for child in list(reserve_row.winfo_children())[1:]:
+                child.destroy()
             tk.Label(
                 reserve_row,
-                text="t",
-                font=("Menlo", 11),
+                textvariable=self.reserve_display_var,
+                font=("Menlo", 12),
                 bg="#ffffff",
                 fg="#111111",
-            ).pack(side="left", padx=(3, 0), pady=(1, 0))
+            ).pack(side="left", padx=(10, 0))
 
         # Copy Route is no longer needed in the compact layout.
         bottom = self.upload_button.master
-        bottom.pack_configure(pady=(2, 10))
+        bottom.pack_configure(pady=(0, 8))
         for child in bottom.winfo_children():
             try:
                 if child.cget("text") == "Copy Route":
@@ -220,12 +226,12 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             x = config.getint("WINDOW", "x")
             y = config.getint("WINDOW", "y")
             width = config.getint("WINDOW", "width", fallback=500)
-            height = config.getint("WINDOW", "height", fallback=660)
+            height = config.getint("WINDOW", "height", fallback=620)
         except (ValueError, configparser.Error):
             return
 
         width = max(width, 460)
-        height = max(height, 580)
+        height = max(height, 540)
         self.geometry(f"{width}x{height}+{x}+{y}")
 
     def _save_window_geometry(self):
@@ -442,6 +448,15 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             parts.append(f"{dest}/{dest_rwy}")
         return " ".join(parts) if parts else route
 
+    def _resize_route_box(self):
+        self.update_idletasks()
+        try:
+            count = self.route_text.count("1.0", "end-1c", "displaylines")
+            display_lines = int(count[0]) if count else 1
+        except (tk.TclError, TypeError, ValueError):
+            display_lines = 4
+        self.route_text.configure(height=max(4, min(10, display_lines)))
+
     def _apply_fetched_data(self, data, from_cache=False):
         super()._apply_fetched_data(data, from_cache=from_cache)
 
@@ -451,12 +466,15 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         self.tow_var.set(
             self._format_tonnes(data["tow_kg"]) if data.get("tow_kg") is not None else "-"
         )
+        reserve_value = data.get("reserves", "-")
+        self.reserve_display_var.set(f"{reserve_value} t" if reserve_value != "-" else "-")
 
         display_route = self._route_with_runways(data)
         self.route_text.configure(state="normal")
         self.route_text.delete("1.0", "end")
         self.route_text.insert("1.0", display_route)
         self.route_text.configure(state="disabled")
+        self.after_idle(self._resize_route_box)
 
         self.fuel_table_var.set(
             data.get(
