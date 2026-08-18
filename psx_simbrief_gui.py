@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import base64
 import configparser
 import json
 import shutil
+import socket
 import sys
 import threading
+import time
 import tkinter as tk
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -16,7 +19,7 @@ from tkinter import filedialog, messagebox, ttk
 import psx_simbrief as backend
 
 
-VERSION = "1.1b"
+VERSION = "1.1c"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -137,8 +140,6 @@ class PsxSimbriefGui(tk.Tk):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        # Black clipboard fills the complete client area. This deliberately
-        # avoids the grey top and side gutters from the earlier layout.
         board = tk.Frame(self, bg="#000000", bd=0)
         board.pack(fill="both", expand=True)
 
@@ -158,7 +159,6 @@ class PsxSimbriefGui(tk.Tk):
         )
         self.menu_button.place(relx=1.0, x=-12, y=10, anchor="ne")
 
-        # Simple metal clipboard clip.
         clip = tk.Frame(board, bg="#777777", width=150, height=24, bd=0)
         clip.place(relx=0.5, y=10, anchor="n")
         clip.pack_propagate(False)
@@ -415,8 +415,6 @@ class PsxSimbriefGui(tk.Tk):
         self._show_purge_confirmation(route_dir)
 
     def _show_purge_confirmation(self, route_dir):
-        # Do not use tkinter.messagebox.askyesno here. On current macOS/Tk
-        # combinations the native alert can crash inside GameControllerUI.
         win = tk.Toplevel(self)
         win.title("Purge Routes")
         win.resizable(False, False)
@@ -525,6 +523,7 @@ class PsxSimbriefGui(tk.Tk):
             qs498 = backend.build_qs498(wind_body)
 
             coroute_name, route_path = backend.download_psx_route_file(root, route_dir)
+            route_bytes = Path(route_path).read_bytes()
             callsign, flight_with_runways, readable_date, route, reserve_display = (
                 backend.get_flight_summary(root)
             )
@@ -533,12 +532,15 @@ class PsxSimbriefGui(tk.Tk):
             data = {
                 "callsign": callsign,
                 "coroute": coroute_name,
+                "orig": orig,
+                "dest": dest,
                 "flight": f"{orig} - {dest}",
                 "flight_with_runways": flight_with_runways,
                 "date": readable_date,
                 "route": " ".join(route.split()),
                 "reserves": reserve_display,
                 "route_path": str(route_path),
+                "route_file_b64": base64.b64encode(route_bytes).decode("ascii"),
                 "qi123": qi123,
                 "qs438": qs438,
                 "qs498": qs498,
@@ -570,6 +572,66 @@ class PsxSimbriefGui(tk.Tk):
         self.upload_button.configure(state="normal")
         self.status_var.set(f"{'Restored' if from_cache else 'Loaded'} {data['callsign']}")
 
+    def _get_cached_route_bytes(self):
+        encoded = self.current_data.get("route_file_b64", "")
+        if encoded:
+            return base64.b64decode(encoded.encode("ascii"))
+
+        old_path = Path(self.current_data.get("route_path", "")).expanduser()
+        if old_path.exists() and old_path.is_file():
+            route_bytes = old_path.read_bytes()
+            self.current_data["route_file_b64"] = base64.b64encode(route_bytes).decode("ascii")
+            return route_bytes
+
+        raise RuntimeError(
+            "The saved flight does not contain the PSX route file. "
+            "Fetch SimBrief once to refresh the saved flight data."
+        )
+
+    def _get_cached_orig_dest(self):
+        orig = self.current_data.get("orig", "").strip().upper()
+        dest = self.current_data.get("dest", "").strip().upper()
+
+        if orig and dest:
+            return orig, dest
+
+        coroute = self.current_data.get("coroute", "").strip().upper()
+        if len(coroute) >= 8:
+            orig = coroute[:4]
+            dest = coroute[4:8]
+            self.current_data["orig"] = orig
+            self.current_data["dest"] = dest
+            return orig, dest
+
+        raise RuntimeError("Could not determine origin and destination for the saved route file.")
+
+    def _restore_route_file_for_upload(self):
+        route_bytes = self._get_cached_route_bytes()
+        orig, dest = self._get_cached_orig_dest()
+
+        route_dir = Path(self.config_values["route_dir"]).expanduser()
+        route_dir.mkdir(parents=True, exist_ok=True)
+
+        current_coroute = self.current_data.get("coroute", "").strip().upper()
+        if not current_coroute:
+            current_coroute, _, _ = backend.next_coroute_name(route_dir, orig, dest)
+
+        target_path = route_dir / f"{current_coroute}_.route"
+
+        if target_path.exists():
+            existing_bytes = target_path.read_bytes()
+            if existing_bytes != route_bytes:
+                current_coroute, _, target_path = backend.next_coroute_name(route_dir, orig, dest)
+
+        # Always write the cached route again when Upload to PSX is pressed.
+        target_path.write_bytes(route_bytes)
+
+        self.current_data["coroute"] = current_coroute
+        self.current_data["route_path"] = str(target_path)
+        self.save_cached_flight(self.current_data)
+
+        return current_coroute, target_path
+
     def upload_current_to_psx(self):
         if not self.current_data:
             return
@@ -581,18 +643,41 @@ class PsxSimbriefGui(tk.Tk):
 
     def _upload_worker(self):
         try:
-            backend.upload_to_psx(
-                self.config_values["host"],
-                int(self.config_values["port"]),
-                self.current_data["qi123"],
-                self.current_data["qs438"],
-                self.current_data["qs498"],
-            )
-            self.after(0, self._upload_complete)
+            coroute_name, route_path = self._restore_route_file_for_upload()
+
+            psx_host = self.config_values["host"]
+            psx_port = int(self.config_values["port"])
+            callsign = self.current_data["callsign"].strip()
+
+            print(f"[PSX] Connecting to {psx_host}:{psx_port}...")
+            with socket.create_connection((psx_host, psx_port), timeout=10) as sock:
+                print("[PSX] Connected successfully.")
+                time.sleep(backend.WAIT_AFTER_CONNECT_SECONDS)
+
+                print("[PSX] Uploading SimBrief data...")
+
+                backend.send_command(sock, f"Qs401={callsign}\r\n")
+                backend.send_command(sock, self.current_data["qi123"])
+                backend.send_command(sock, self.current_data["qs438"])
+
+                backend.send_command(sock, "Qi220=1\r\n")
+                backend.send_command(sock, "Qi220=0\r\n")
+
+                time.sleep(backend.AFTER_FUELING_PAUSE_SECONDS)
+
+                backend.send_command(sock, "Qs497=201\r\n")
+                backend.send_command(sock, self.current_data["qs498"])
+                backend.send_command(sock, "exit\r\n", pause=0)
+
+            print("[PSX] Upload complete. Disconnected.")
+            self.after(0, self._upload_complete, coroute_name, str(route_path))
         except Exception as exc:
             self.after(0, self._operation_failed, "PSX", str(exc))
 
-    def _upload_complete(self):
+    def _upload_complete(self, coroute_name, route_path):
+        self.current_data["coroute"] = coroute_name
+        self.current_data["route_path"] = route_path
+        self.coroute_var.set(coroute_name)
         self.fetch_button.configure(state="normal")
         self.upload_button.configure(state="normal")
         self.status_var.set("PSX upload complete")
