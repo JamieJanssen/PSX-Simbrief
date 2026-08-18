@@ -8,6 +8,7 @@ import socket
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from tkinter import ttk
@@ -16,7 +17,7 @@ import psx_simbrief as backend
 import psx_simbrief_gui_core as core
 
 
-VERSION = "1.1q"
+VERSION = "1.1r"
 APP_NAME = core.APP_NAME
 INI_PATH = core.INI_PATH
 
@@ -169,11 +170,11 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
             column=0,
             columnspan=2,
             sticky="w",
-            pady=(6, 0),
+            pady=(12, 0),
         )
 
         if reserve_row is not None:
-            reserve_row.grid_configure(row=5, pady=(2, 0))
+            reserve_row.grid_configure(row=5, pady=(6, 0))
             # Keep the reserve value and unit as one label so they use the
             # same font and baseline: e.g. "12.6 t".
             for child in list(reserve_row.winfo_children())[1:]:
@@ -518,16 +519,41 @@ class PsxSimbriefGui(core.PsxSimbriefGui):
         return " ".join(parts) if parts else route
 
     def _resize_route_box(self):
-        # Tk may only report the display lines that currently fit in a Text
-        # widget. Temporarily make the box as tall as the allowed maximum so
-        # the complete wrapped route can be measured before shrinking it.
-        self.route_text.configure(height=10)
+        # Count wrapped lines from the actual text width instead of relying on
+        # Text.count(displaylines), which can report only the currently visible
+        # lines on some Tk/macOS combinations.
         self.update_idletasks()
+        text = self.route_text.get("1.0", "end-1c")
+        font = tkfont.Font(font=self.route_text.cget("font"))
+
         try:
-            count = self.route_text.count("1.0", "end-1c", "displaylines")
-            display_lines = int(count[0]) if count else 1
-        except (tk.TclError, TypeError, ValueError):
-            display_lines = 4
+            padx = int(float(self.route_text.cget("padx")))
+            border = int(float(self.route_text.cget("bd")))
+        except (TypeError, ValueError, tk.TclError):
+            padx = 8
+            border = 1
+
+        usable_width = max(1, self.route_text.winfo_width() - 2 * padx - 2 * border - 2)
+        space_width = font.measure(" ")
+        display_lines = 0
+
+        for paragraph in text.split("\n"):
+            words = paragraph.split()
+            if not words:
+                display_lines += 1
+                continue
+
+            display_lines += 1
+            line_width = 0
+            for word in words:
+                word_width = font.measure(word)
+                candidate_width = word_width if line_width == 0 else line_width + space_width + word_width
+                if line_width and candidate_width > usable_width:
+                    display_lines += 1
+                    line_width = word_width
+                else:
+                    line_width = candidate_width
+
         self.route_text.configure(height=max(4, min(10, display_lines)))
 
     def _apply_fetched_data(self, data, from_cache=False):
