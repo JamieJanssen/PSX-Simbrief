@@ -191,7 +191,7 @@ def build_qs438(block_fuel_lbs):
         1500,
     ]
 
-    return "Qs438=d" + ";".join(str(value) for value in values) + "\r\n"
+    return "Qs438=d" + ";".join(str(value) for value in values) + ";\r\n"
 
 
 def psx_fix_name(name):
