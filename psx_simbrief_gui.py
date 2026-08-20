@@ -13,13 +13,14 @@ import time
 import tkinter as tk
 import tkinter.font as tkfont
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import psx_simbrief as backend
 
 
-VERSION = "1.2"
+VERSION = "1.2a"
 APP_NAME = "PSX Simbrief"
 APP_DIR = Path(__file__).resolve().parent
 
@@ -45,6 +46,10 @@ class PsxSimbriefGui(tk.Tk):
         super().__init__()
 
         self._destroying = False
+        self.debug_enabled = False
+        self.debug_window = None
+        self.debug_text = None
+
         self.title(f"{APP_NAME} v{VERSION}")
         self.geometry("500x620")
         self.minsize(460, 540)
@@ -63,6 +68,7 @@ class PsxSimbriefGui(tk.Tk):
         self.zfw_var = tk.StringVar(master=self, value="-")
         self.tow_var = tk.StringVar(master=self, value="-")
         self.reserve_display_var = tk.StringVar(master=self, value="-")
+        self.debug_var = tk.BooleanVar(master=self, value=False)
 
         self._build_ui()
         self.load_cached_flight()
@@ -371,6 +377,12 @@ class PsxSimbriefGui(tk.Tk):
 
     def show_menu(self):
         menu = tk.Menu(self, tearoff=False)
+        menu.add_checkbutton(
+            label="Debug",
+            variable=self.debug_var,
+            command=self._toggle_debug,
+        )
+        menu.add_separator()
         menu.add_command(label="Purge Routes…", command=self.purge_routes)
         menu.add_command(label="Settings…", command=self.open_settings)
         menu.add_separator()
@@ -382,6 +394,115 @@ class PsxSimbriefGui(tk.Tk):
             menu.tk_popup(x, y)
         finally:
             menu.grab_release()
+
+    # ------------------------------------------------------------------
+    # Debug window
+    # ------------------------------------------------------------------
+
+    def _toggle_debug(self):
+        self.debug_enabled = bool(self.debug_var.get())
+        if self.debug_enabled:
+            self._open_debug_window()
+        else:
+            self._close_debug_window(update_var=False)
+
+    def _open_debug_window(self):
+        if self.debug_window is not None and self.debug_window.winfo_exists():
+            self.debug_window.deiconify()
+            self.debug_window.lift()
+            return
+
+        win = tk.Toplevel(self)
+        win.title("PSX Simbrief Debug")
+        win.geometry("900x560")
+        win.minsize(620, 320)
+        self.debug_window = win
+
+        frame = ttk.Frame(win, padding=8)
+        frame.pack(fill="both", expand=True)
+
+        text = tk.Text(
+            frame,
+            wrap="none",
+            font=("Menlo", 10),
+            undo=False,
+            exportselection=True,
+        )
+        y_scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        x_scroll = ttk.Scrollbar(frame, orient="horizontal", command=text.xview)
+        text.configure(
+            yscrollcommand=y_scroll.set,
+            xscrollcommand=x_scroll.set,
+        )
+
+        text.grid(row=0, column=0, sticky="nsew")
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+
+        self.debug_text = text
+        self._append_debug_text(
+            f"PSX Simbrief v{VERSION} debug enabled\n"
+            "All captured SimBrief data and PSX transmissions are shown below.\n\n"
+        )
+
+        win.protocol("WM_DELETE_WINDOW", self._close_debug_window)
+
+    def _close_debug_window(self, update_var=True):
+        if update_var:
+            self.debug_var.set(False)
+            self.debug_enabled = False
+
+        if self.debug_window is not None:
+            try:
+                self.debug_window.destroy()
+            except tk.TclError:
+                pass
+
+        self.debug_window = None
+        self.debug_text = None
+
+    def _debug_log(self, label, message=""):
+        if not self.debug_enabled:
+            return
+
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        line = f"{timestamp} {label}"
+        if message:
+            line += f" {message}"
+        line += "\n"
+
+        try:
+            self.after(0, self._append_debug_text, line)
+        except tk.TclError:
+            pass
+
+    def _debug_log_block(self, label, text):
+        if not self.debug_enabled:
+            return
+
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        block = f"{timestamp} {label}\n{text}\n\n"
+        try:
+            self.after(0, self._append_debug_text, block)
+        except tk.TclError:
+            pass
+
+    def _append_debug_text(self, text):
+        if self.debug_text is None:
+            return
+        try:
+            if not self.debug_text.winfo_exists():
+                return
+            self.debug_text.insert("end", text)
+            self.debug_text.see("end")
+        except tk.TclError:
+            pass
+
+    def _send_psx_command(self, sock, command, pause=backend.SEND_PAUSE_SECONDS):
+        self._debug_log("[PSX TX]", command.rstrip("\r\n"))
+        backend.send_command(sock, command, pause=pause)
 
     # ------------------------------------------------------------------
     # Settings window
@@ -777,7 +898,12 @@ class PsxSimbriefGui(tk.Tk):
             username = self.config_values["username"]
             route_dir = self.config_values["route_dir"]
 
+            self._debug_log(
+                "[SIMBRIEF TX]",
+                f"GET /api/xml.fetcher.php?username={username}",
+            )
             xml_text = backend.fetch_simbrief_xml(username)
+            self._debug_log_block("[SIMBRIEF RX XML]", xml_text)
             root = ET.fromstring(xml_text)
 
             fetch_status = backend.optional_text(root, ".//fetch/status")
@@ -801,10 +927,24 @@ class PsxSimbriefGui(tk.Tk):
             wind_body = backend.extract_wind_body(root)
             qs498 = backend.build_qs498(wind_body)
 
+            self._debug_log(
+                "[SIMBRIEF DATA]",
+                f"ZFW={zfw_kg} kg / {zfw_lbs} lb; "
+                f"TOW={tow_kg} kg; BLOCK={block_kg} kg / {block_lbs} lb",
+            )
+
             coroute_name, route_path = backend.download_psx_route_file(
                 root, route_dir
             )
             route_bytes = Path(route_path).read_bytes()
+            self._debug_log(
+                "[SIMBRIEF RX ROUTE]",
+                f"{Path(route_path).name} ({len(route_bytes)} bytes)",
+            )
+            self._debug_log_block(
+                "[SIMBRIEF RX ROUTE CONTENT]",
+                route_bytes.decode("utf-8", errors="replace"),
+            )
             self.save_persistent_route(route_bytes)
 
             callsign, flight_with_runways, readable_date, route, reserve_display = (
@@ -838,9 +978,15 @@ class PsxSimbriefGui(tk.Tk):
                 "wind_corridors": backend.count_wind_corridors(wind_body),
             }
 
+            self._debug_log(
+                "[SIMBRIEF DATA]",
+                f"CALLSIGN={callsign}; CO ROUTE={coroute_name}; "
+                f"FLIGHT={orig}-{dest}; RESERVES={reserve_display}",
+            )
             self.save_cached_flight(data)
             self.after(0, self._apply_fetched_data, data)
         except Exception as exc:
+            self._debug_log("[ERROR]", f"SimBrief: {exc}")
             self.after(0, self._operation_failed, "SimBrief", str(exc))
 
     def _route_with_runways(self, data):
@@ -1045,6 +1191,10 @@ class PsxSimbriefGui(tk.Tk):
         self.current_data["route_path"] = str(target_path)
         self.save_cached_flight(self.current_data)
 
+        self._debug_log(
+            "[ROUTE]",
+            f"Restored {target_path} as CO ROUTE {target_coroute}",
+        )
         return target_coroute, target_path
 
     def upload_current_to_psx(self):
@@ -1065,38 +1215,43 @@ class PsxSimbriefGui(tk.Tk):
             callsign = self.current_data["callsign"].strip()
 
             print(f"[PSX] Connecting to {psx_host}:{psx_port}...")
+            self._debug_log("[PSX]", f"Connecting to {psx_host}:{psx_port}")
             with socket.create_connection(
                 (psx_host, psx_port), timeout=10
             ) as sock:
                 print("[PSX] Connected successfully.")
+                self._debug_log("[PSX]", "Connected")
                 time.sleep(backend.WAIT_AFTER_CONNECT_SECONDS)
 
                 print("[PSX] Initializing flight from SimBrief data...")
+                self._debug_log("[PSX]", "Initializing flight")
 
-                backend.send_command(sock, "Qh401=58\r\n")
-                backend.send_command(sock, f"Qs401={callsign}\r\n")
-                backend.send_command(
+                self._send_psx_command(sock, "Qh401=58\r\n")
+                self._send_psx_command(sock, f"Qs401={callsign}\r\n")
+                self._send_psx_command(
                     sock, f"Qs075={coroute_name}\r\n", pause=0.1
                 )
-                backend.send_command(sock, "Qh401=53\r\n")
+                self._send_psx_command(sock, "Qh401=53\r\n")
 
-                backend.send_command(sock, self.current_data["qi123"])
-                backend.send_command(sock, self.current_data["qs438"])
+                self._send_psx_command(sock, self.current_data["qi123"])
+                self._send_psx_command(sock, self.current_data["qs438"])
 
-                backend.send_command(sock, "Qi220=1\r\n")
-                backend.send_command(sock, "Qi220=0\r\n")
+                self._send_psx_command(sock, "Qi220=1\r\n")
+                self._send_psx_command(sock, "Qi220=0\r\n")
 
                 time.sleep(backend.AFTER_FUELING_PAUSE_SECONDS)
 
-                backend.send_command(sock, "Qs497=201\r\n")
-                backend.send_command(sock, self.current_data["qs498"])
-                backend.send_command(sock, "exit\r\n", pause=0)
+                self._send_psx_command(sock, "Qs497=201\r\n")
+                self._send_psx_command(sock, self.current_data["qs498"])
+                self._send_psx_command(sock, "exit\r\n", pause=0)
 
             print("[PSX] Flight INIT complete. Disconnected.")
+            self._debug_log("[PSX]", "Disconnected")
             self.after(
                 0, self._upload_complete, coroute_name, str(route_path)
             )
         except Exception as exc:
+            self._debug_log("[ERROR]", f"PSX: {exc}")
             self.after(0, self._operation_failed, "PSX", str(exc))
 
     def _upload_complete(self, coroute_name, route_path):
