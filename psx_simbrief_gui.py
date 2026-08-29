@@ -23,9 +23,13 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 
-VERSION = "1.2b"
+VERSION = "1.2c"
 APP_NAME = "PSX Simbrief"
-APP_DIR = Path(__file__).resolve().parent
+
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent
 
 if sys.platform == "darwin":
     SETTINGS_DIR = Path.home() / "Library/Application Support/PSX Simbrief"
