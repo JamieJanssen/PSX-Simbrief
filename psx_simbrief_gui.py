@@ -23,7 +23,7 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 
-VERSION = "1.2c"
+VERSION = "1.2d"
 APP_NAME = "PSX Simbrief"
 
 if getattr(sys, "frozen", False):
@@ -77,6 +77,24 @@ FILL_ORDER = [
     "aux",
     "stab",
 ]
+
+
+def resource_path(filename):
+    """Return a bundled PyInstaller resource path or a normal source path."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / filename
+    return APP_DIR / filename
+
+
+if sys.platform == "win32":
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "JamieJanssen.PSXSimbrief"
+        )
+    except Exception:
+        pass
 
 
 def kg_to_lbs_ceil(value_kg):
@@ -316,6 +334,14 @@ def get_flight_summary(root):
 class PsxSimbriefGui(tk.Tk):
     def __init__(self):
         super().__init__()
+
+        if sys.platform == "win32":
+            try:
+                icon_path = resource_path("psx.ico")
+                if icon_path.exists():
+                    self.iconbitmap(default=str(icon_path))
+            except tk.TclError:
+                pass
 
         self._destroying = False
         self.debug_enabled = False
