@@ -23,7 +23,7 @@ from urllib.error import HTTPError
 from urllib.request import urlopen
 
 
-VERSION = "1.2d"
+VERSION = "1.2e"
 APP_NAME = "PSX Simbrief"
 
 if getattr(sys, "frozen", False):
@@ -527,8 +527,9 @@ class PsxSimbriefGui(tk.Tk):
         self.route_text.insert("1.0", "-")
         self.route_text.configure(state="disabled")
 
+        fuel_font = "Consolas" if sys.platform == "win32" else "Menlo"
         self.fuel_table_label = tk.Label(
-            content, textvariable=self.fuel_table_var, font=("Menlo", 9),
+            content, textvariable=self.fuel_table_var, font=(fuel_font, 9),
             bg="#ffffff", fg="#111111", justify="left", anchor="w",
         )
         self.fuel_table_label.grid(
